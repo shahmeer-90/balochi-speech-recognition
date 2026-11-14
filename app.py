@@ -17,11 +17,20 @@ st.set_page_config(
 # Model repository
 MODEL_ID = "shahMeer2002/balochi-xlsr-asr"
 
+
 @st.cache_resource
 def load_asr_model():
-    processor = Wav2Vec2Processor.from_pretrained(MODEL_ID)
+    token = st.secrets["HF_TOKEN"]
 
-    model = Wav2Vec2ForCTC.from_pretrained(MODEL_ID)
+    processor = Wav2Vec2Processor.from_pretrained(
+        MODEL_ID,
+        token=token
+    )
+
+    model = Wav2Vec2ForCTC.from_pretrained(
+        MODEL_ID,
+        token=token
+    )
 
     device = torch.device(
         "cuda" if torch.cuda.is_available() else "cpu"
@@ -31,6 +40,7 @@ def load_asr_model():
     model.eval()
 
     return processor, model, device
+
 
 
 # Application interface
