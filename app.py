@@ -1,9 +1,11 @@
+
 import streamlit as st
 import torch
 import librosa
-import numpy as np
 from transformers import (
     Wav2Vec2ForCTC,
+    Wav2Vec2CTCTokenizer,
+    Wav2Vec2FeatureExtractor,
     Wav2Vec2Processor
 )
 
@@ -18,31 +20,26 @@ st.set_page_config(
 MODEL_ID = "shahMeer2002/balochi-xlsr-asr"
 
 
+# Load ASR model and processor
 @st.cache_resource
 def load_asr_model():
+
     token = st.secrets["HF_TOKEN"]
 
-    from transformers import (
-    Wav2Vec2CTCTokenizer,
-    Wav2Vec2FeatureExtractor,
-    Wav2Vec2Processor,
-    Wav2Vec2ForCTC
-)
+    tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(
+        MODEL_ID,
+        token=token
+    )
 
-tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(
-    MODEL_ID,
-    token=token
-)
+    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+        MODEL_ID,
+        token=token
+    )
 
-feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
-    MODEL_ID,
-    token=token
-)
-
-processor = Wav2Vec2Processor(
-    feature_extractor=feature_extractor,
-    tokenizer=tokenizer
-)
+    processor = Wav2Vec2Processor(
+        feature_extractor=feature_extractor,
+        tokenizer=tokenizer
+    )
 
     model = Wav2Vec2ForCTC.from_pretrained(
         MODEL_ID,
@@ -57,7 +54,6 @@ processor = Wav2Vec2Processor(
     model.eval()
 
     return processor, model, device
-
 
 
 # Application interface
