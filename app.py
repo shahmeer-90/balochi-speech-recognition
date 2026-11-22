@@ -45,18 +45,16 @@ AUDIO_MIME_TYPES = {
     "aac": "audio/aac"
 }
 
-# Limit CPU thread usage on cloud
 torch.set_num_threads(2)
-
-
-# ==========================================
-# 2. DEVICE CONFIGURATION
-# ==========================================
 
 DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
+
+# ==========================================
+# 2. HUGGING FACE AUTHENTICATION
+# ==========================================
 
 def get_hf_token():
 
@@ -79,7 +77,6 @@ def release_memory():
     gc.collect()
 
     if torch.cuda.is_available():
-
         torch.cuda.empty_cache()
 
 
@@ -118,7 +115,7 @@ def load_asr_model(token):
 
 
 # ==========================================
-# 5. LOAD BYT5 PUNCTUATION MODEL
+# 5. LOAD BYT5 MODEL
 # ==========================================
 
 def load_punctuation_model(token):
@@ -164,7 +161,10 @@ def process_audio(audio_bytes, extension):
         )
 
         if audio is None or len(audio) == 0:
-            raise ValueError("Audio file is empty.")
+
+            raise ValueError(
+                "Audio file is empty."
+            )
 
         return audio
 
@@ -174,6 +174,7 @@ def process_audio(audio_bytes, extension):
             temp_audio_path
             and os.path.exists(temp_audio_path)
         ):
+
             os.remove(temp_audio_path)
 
 
@@ -214,9 +215,7 @@ def transcribe_audio(audio_bytes, extension):
                 padding=True
             )
 
-            input_values = inputs.input_values.to(
-                DEVICE
-            )
+            input_values = inputs.input_values.to(DEVICE)
 
             with torch.inference_mode():
 
@@ -233,16 +232,10 @@ def transcribe_audio(audio_bytes, extension):
                 predicted_ids
             )[0].strip()
 
-            del inputs
-            del input_values
-            del logits
-            del predicted_ids
-
             if not transcription:
 
                 raise ValueError(
-                    "ASR returned empty transcription. "
-                    "Please try another audio recording."
+                    "ASR returned empty transcription."
                 )
 
             return transcription
@@ -292,7 +285,7 @@ def restore_punctuation(text):
                 text.strip(),
                 return_tensors="pt",
                 truncation=True,
-                max_length=512
+                max_length=256
             )
 
             inputs = {
@@ -304,7 +297,7 @@ def restore_punctuation(text):
 
                 output_ids = model.generate(
                     **inputs,
-                    max_new_tokens=512,
+                    max_new_tokens=128,
                     num_beams=1,
                     do_sample=False
                 )
@@ -320,8 +313,15 @@ def restore_punctuation(text):
                     "ByT5 returned empty output."
                 )
 
-            del inputs
-            del output_ids
+            if not any(
+                character.isalnum()
+                or '\u0600' <= character <= '\u06FF'
+                for character in punctuated_text
+            ):
+
+                raise ValueError(
+                    "ByT5 generated invalid output."
+                )
 
             return punctuated_text
 
@@ -426,7 +426,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 11. DISPLAY ASR TRANSCRIPTION
+# 11. DISPLAY ORIGINAL TRANSCRIPTION
 # ==========================================
 
 if (
@@ -496,7 +496,7 @@ if (
 
 
 # ==========================================
-# 13. DISPLAY RESTORED TEXT
+# 13. DISPLAY PUNCTUATED TEXT
 # ==========================================
 
 if (
