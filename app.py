@@ -18,6 +18,12 @@ from transformers import (
     AutoTokenizer,
     AutoModelForSeq2SeqLM
 )
+import huggingface_hub
+
+st.write(
+    "Hugging Face Hub:",
+    huggingface_hub.__version__
+)
 
 
 # ==========================================
