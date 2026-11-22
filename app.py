@@ -15,18 +15,23 @@ from transformers import (
     AutoModelForSeq2SeqLM
 )
 
-# Page configuration
+
+# ==========================================
+# 1. PAGE CONFIGURATION
+# ==========================================
+
 st.set_page_config(
     page_title="Balochi Speech Recognition",
     page_icon="🎙️",
     layout="centered"
 )
 
-# Hugging Face repositories
 ASR_MODEL_ID = "shahMeer2002/balochi-xlsr-asr"
-PUNCTUATION_MODEL_ID = "shahMeer2002/balochi-byt5-punctuation"
 
-# Supported audio formats
+PUNCTUATION_MODEL_ID = (
+    "shahMeer2002/balochi-byt5-punctuation"
+)
+
 SUPPORTED_FORMATS = [
     "wav", "mp3", "m4a", "flac", "ogg", "aac"
 ]
@@ -40,21 +45,60 @@ AUDIO_MIME_TYPES = {
     "aac": "audio/aac"
 }
 
+# Limit CPU thread usage on cloud
+torch.set_num_threads(2)
 
-# Load ASR model
-@st.cache_resource
-def load_asr_model():
 
-    token = st.secrets["HF_TOKEN"]
+# ==========================================
+# 2. DEVICE CONFIGURATION
+# ==========================================
+
+DEVICE = torch.device(
+    "cuda" if torch.cuda.is_available() else "cpu"
+)
+
+
+def get_hf_token():
+
+    try:
+        return st.secrets["HF_TOKEN"]
+
+    except Exception:
+        st.error(
+            "HF_TOKEN is missing from Streamlit Secrets."
+        )
+        st.stop()
+
+
+# ==========================================
+# 3. MEMORY MANAGEMENT
+# ==========================================
+
+def release_memory():
+
+    gc.collect()
+
+    if torch.cuda.is_available():
+
+        torch.cuda.empty_cache()
+
+
+# ==========================================
+# 4. LOAD ASR MODEL
+# ==========================================
+
+def load_asr_model(token):
 
     tokenizer = Wav2Vec2CTCTokenizer.from_pretrained(
         ASR_MODEL_ID,
         token=token
     )
 
-    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
-        ASR_MODEL_ID,
-        token=token
+    feature_extractor = (
+        Wav2Vec2FeatureExtractor.from_pretrained(
+            ASR_MODEL_ID,
+            token=token
+        )
     )
 
     processor = Wav2Vec2Processor(
@@ -67,21 +111,17 @@ def load_asr_model():
         token=token
     )
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
-
-    model.to(device)
+    model.to(DEVICE)
     model.eval()
 
-    return processor, model, device
+    return processor, model
 
 
-# Load ByT5 punctuation model
-@st.cache_resource
-def load_punctuation_model():
+# ==========================================
+# 5. LOAD BYT5 PUNCTUATION MODEL
+# ==========================================
 
-    token = st.secrets["HF_TOKEN"]
+def load_punctuation_model(token):
 
     tokenizer = AutoTokenizer.from_pretrained(
         PUNCTUATION_MODEL_ID,
@@ -93,17 +133,210 @@ def load_punctuation_model():
         token=token
     )
 
-    device = torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
-
-    model.to(device)
+    model.to(DEVICE)
     model.eval()
 
-    return tokenizer, model, device
+    return tokenizer, model
 
 
-# Application interface
+# ==========================================
+# 6. AUDIO PROCESSING
+# ==========================================
+
+def process_audio(audio_bytes, extension):
+
+    temp_audio_path = None
+
+    try:
+
+        with tempfile.NamedTemporaryFile(
+            suffix="." + extension,
+            delete=False
+        ) as temp_audio:
+
+            temp_audio.write(audio_bytes)
+            temp_audio_path = temp_audio.name
+
+        audio, sample_rate = librosa.load(
+            temp_audio_path,
+            sr=16000,
+            mono=True
+        )
+
+        if audio is None or len(audio) == 0:
+            raise ValueError("Audio file is empty.")
+
+        return audio
+
+    finally:
+
+        if (
+            temp_audio_path
+            and os.path.exists(temp_audio_path)
+        ):
+            os.remove(temp_audio_path)
+
+
+# ==========================================
+# 7. TRANSCRIBE AUDIO
+# ==========================================
+
+def transcribe_audio(audio_bytes, extension):
+
+    token = get_hf_token()
+
+    release_memory()
+
+    processor = None
+    model = None
+
+    try:
+
+        with st.spinner(
+            "Loading Balochi ASR model..."
+        ):
+
+            processor, model = load_asr_model(token)
+
+        with st.spinner(
+            "Processing audio and recognizing speech..."
+        ):
+
+            audio = process_audio(
+                audio_bytes,
+                extension
+            )
+
+            inputs = processor(
+                audio,
+                sampling_rate=16000,
+                return_tensors="pt",
+                padding=True
+            )
+
+            input_values = inputs.input_values.to(
+                DEVICE
+            )
+
+            with torch.inference_mode():
+
+                logits = model(
+                    input_values
+                ).logits
+
+            predicted_ids = torch.argmax(
+                logits,
+                dim=-1
+            )
+
+            transcription = processor.batch_decode(
+                predicted_ids
+            )[0].strip()
+
+            del inputs
+            del input_values
+            del logits
+            del predicted_ids
+
+            if not transcription:
+
+                raise ValueError(
+                    "ASR returned empty transcription. "
+                    "Please try another audio recording."
+                )
+
+            return transcription
+
+    finally:
+
+        del model
+        del processor
+
+        release_memory()
+
+
+# ==========================================
+# 8. RESTORE PUNCTUATION
+# ==========================================
+
+def restore_punctuation(text):
+
+    if not text or not text.strip():
+
+        raise ValueError(
+            "No transcription text available."
+        )
+
+    token = get_hf_token()
+
+    release_memory()
+
+    tokenizer = None
+    model = None
+
+    try:
+
+        with st.spinner(
+            "Loading ByT5 punctuation model..."
+        ):
+
+            tokenizer, model = load_punctuation_model(
+                token
+            )
+
+        with st.spinner(
+            "Restoring Balochi punctuation..."
+        ):
+
+            inputs = tokenizer(
+                text.strip(),
+                return_tensors="pt",
+                truncation=True,
+                max_length=512
+            )
+
+            inputs = {
+                key: value.to(DEVICE)
+                for key, value in inputs.items()
+            }
+
+            with torch.inference_mode():
+
+                output_ids = model.generate(
+                    **inputs,
+                    max_new_tokens=512,
+                    num_beams=1,
+                    do_sample=False
+                )
+
+            punctuated_text = tokenizer.decode(
+                output_ids[0],
+                skip_special_tokens=True
+            ).strip()
+
+            if not punctuated_text:
+
+                raise ValueError(
+                    "ByT5 returned empty output."
+                )
+
+            del inputs
+            del output_ids
+
+            return punctuated_text
+
+    finally:
+
+        del model
+        del tokenizer
+
+        release_memory()
+
+
+# ==========================================
+# 9. APPLICATION INTERFACE
+# ==========================================
+
 st.title("🎙️ Balochi Speech Recognition")
 
 st.write(
@@ -115,199 +348,191 @@ st.info(
     "Supported formats: WAV, MP3, M4A, FLAC, OGG and AAC"
 )
 
-uploaded_file = st.file_uploader(
-    "Choose a Balochi audio file",
-    type=SUPPORTED_FORMATS
+st.caption(
+    "Audio is processed using the XLS-R Balochi ASR model."
 )
 
 
-# Audio transcription
+# ==========================================
+# 10. AUDIO UPLOAD
+# ==========================================
+
+uploaded_file = st.file_uploader(
+    "Choose a Balochi audio file",
+    type=SUPPORTED_FORMATS,
+    key="audio_uploader"
+)
+
+
 if uploaded_file is not None:
 
-    file_extension = uploaded_file.name.rsplit(
+    audio_bytes = uploaded_file.getvalue()
+
+    extension = uploaded_file.name.rsplit(
         ".", 1
     )[-1].lower()
 
     audio_format = AUDIO_MIME_TYPES.get(
-        file_extension,
+        extension,
         "audio/wav"
     )
 
     st.audio(
-        uploaded_file.getvalue(),
+        audio_bytes,
         format=audio_format
     )
 
-    if st.button("Transcribe Audio", type="primary"):
+    st.caption(
+        f"File: {uploaded_file.name} | "
+        f"Size: {len(audio_bytes) / (1024 * 1024):.2f} MB"
+    )
+
+    if st.button(
+        "Transcribe Audio",
+        type="primary",
+        use_container_width=True
+    ):
+
+        st.session_state.pop(
+            "transcription",
+            None
+        )
+
+        st.session_state.pop(
+            "punctuated_text",
+            None
+        )
 
         try:
-            with st.spinner("Transcribing Balochi audio..."):
 
-                # Release punctuation model memory
-                load_punctuation_model.clear()
-                gc.collect()
+            transcription = transcribe_audio(
+                audio_bytes,
+                extension
+            )
 
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+            st.session_state["transcription"] = (
+                transcription
+            )
 
-                processor, model, device = load_asr_model()
-
-                # Save uploaded audio temporarily
-                with tempfile.NamedTemporaryFile(
-                    suffix="." + file_extension,
-                    delete=False
-                ) as temp_audio:
-
-                    temp_audio.write(
-                        uploaded_file.getvalue()
-                    )
-
-                    temp_audio_path = temp_audio.name
-
-                try:
-                    # Load and convert audio to 16kHz mono
-                    audio, sample_rate = librosa.load(
-                        temp_audio_path,
-                        sr=16000,
-                        mono=True
-                    )
-
-                finally:
-                    if os.path.exists(temp_audio_path):
-                        os.remove(temp_audio_path)
-
-                if len(audio) == 0:
-                    st.error("The uploaded audio is empty.")
-                    st.stop()
-
-                # Prepare audio for ASR model
-                inputs = processor(
-                    audio,
-                    sampling_rate=16000,
-                    return_tensors="pt",
-                    padding=True
-                )
-
-                input_values = inputs.input_values.to(device)
-
-                with torch.no_grad():
-                    logits = model(input_values).logits
-
-                predicted_ids = torch.argmax(
-                    logits,
-                    dim=-1
-                )
-
-                transcription = processor.batch_decode(
-                    predicted_ids
-                )[0]
-
-                st.session_state["transcription"] = transcription
-
-                st.session_state.pop(
-                    "punctuated_text",
-                    None
-                )
-
-            st.success("Transcription completed!")
+            st.success(
+                "Transcription completed successfully!"
+            )
 
         except Exception as e:
+
             st.error(
-                f"Transcription failed: {e}"
+                f"Transcription failed: {str(e)}"
             )
 
 
-# Display original transcription
-if "transcription" in st.session_state:
+# ==========================================
+# 11. DISPLAY ASR TRANSCRIPTION
+# ==========================================
 
-    st.subheader("Balochi Transcription")
+if (
+    "transcription" in st.session_state
+    and st.session_state["transcription"]
+):
+
+    st.divider()
+
+    st.subheader(
+        "📝 Balochi Transcription"
+    )
 
     st.text_area(
         "Original Recognized Text",
         value=st.session_state["transcription"],
-        height=150
+        height=180,
+        disabled=True
     )
 
     st.download_button(
         label="Download Original Transcription",
         data=st.session_state["transcription"],
         file_name="balochi_transcription.txt",
-        mime="text/plain"
+        mime="text/plain",
+        use_container_width=True
     )
 
-    # Punctuation restoration
-    if st.button("Restore Punctuation"):
+    # ======================================
+    # 12. PUNCTUATION RESTORATION BUTTON
+    # ======================================
+
+    if st.button(
+        "Restore Punctuation",
+        type="primary",
+        use_container_width=True
+    ):
+
+        st.session_state.pop(
+            "punctuated_text",
+            None
+        )
 
         try:
-            with st.spinner(
-                "Restoring Balochi punctuation..."
-            ):
 
-                # Release ASR model memory
-                load_asr_model.clear()
-                gc.collect()
+            original_text = (
+                st.session_state["transcription"]
+            )
 
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+            punctuated_text = restore_punctuation(
+                original_text
+            )
 
-                tokenizer, model, device = (
-                    load_punctuation_model()
-                )
-
-                text = st.session_state["transcription"]
-
-                inputs = tokenizer(
-                    text,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=512
-                )
-
-                inputs = {
-                    key: value.to(device)
-                    for key, value in inputs.items()
-                }
-
-                with torch.no_grad():
-                    output_ids = model.generate(
-                        **inputs,
-                        max_new_tokens=512,
-                        num_beams=4
-                    )
-
-                punctuated_text = tokenizer.decode(
-                    output_ids[0],
-                    skip_special_tokens=True
-                )
-
-                st.session_state["punctuated_text"] = (
-                    punctuated_text
-                )
+            st.session_state["punctuated_text"] = (
+                punctuated_text
+            )
 
             st.success(
                 "Punctuation restoration completed!"
             )
 
         except Exception as e:
+
             st.error(
-                f"Punctuation restoration failed: {e}"
+                f"Punctuation restoration failed: {str(e)}"
             )
 
 
-# Display punctuation-restored text
-if "punctuated_text" in st.session_state:
+# ==========================================
+# 13. DISPLAY RESTORED TEXT
+# ==========================================
 
-    st.subheader("Punctuation Restored Text")
+if (
+    "punctuated_text" in st.session_state
+    and st.session_state["punctuated_text"]
+):
+
+    st.divider()
+
+    st.subheader(
+        "✨ Punctuation Restored Text"
+    )
 
     st.text_area(
         "Processed Balochi Text",
         value=st.session_state["punctuated_text"],
-        height=150
+        height=180,
+        disabled=True
     )
 
     st.download_button(
         label="Download Processed Text",
         data=st.session_state["punctuated_text"],
         file_name="balochi_punctuated_transcription.txt",
-        mime="text/plain"
+        mime="text/plain",
+        use_container_width=True
     )
+
+
+# ==========================================
+# 14. FOOTER
+# ==========================================
+
+st.divider()
+
+st.caption(
+    "Balochi Speech Recognition | "
+    "XLS-R ASR + ByT5 Punctuation Restoration"
+)
