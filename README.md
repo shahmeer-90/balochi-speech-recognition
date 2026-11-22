@@ -11,6 +11,12 @@ This project implements an SR-05 post-processing prototype for Balochi ASR.
 - Pandas and Regular Expressions
 
 ### Punctuation Restoration
+**Trained ByT5 Model (Hugging Face)**
+
+- Model: ByT5-small
+- Repository: https://huggingface.co/shahMeer2002/balochi-byt5-punctuation
+- Architecture: T5ForConditionalGeneration
+- Model format: Safetensors
 
 Two separate model experiments were evaluated.
 
