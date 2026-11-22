@@ -2,8 +2,9 @@
 import streamlit as st
 import torch
 import librosa
-import io
+import tempfile
 import gc
+import os
 
 from transformers import (
     Wav2Vec2ForCTC,
@@ -24,6 +25,20 @@ st.set_page_config(
 # Hugging Face repositories
 ASR_MODEL_ID = "shahMeer2002/balochi-xlsr-asr"
 PUNCTUATION_MODEL_ID = "shahMeer2002/balochi-byt5-punctuation"
+
+# Supported audio formats
+SUPPORTED_FORMATS = [
+    "wav", "mp3", "m4a", "flac", "ogg", "aac"
+]
+
+AUDIO_MIME_TYPES = {
+    "wav": "audio/wav",
+    "mp3": "audio/mpeg",
+    "m4a": "audio/mp4",
+    "flac": "audio/flac",
+    "ogg": "audio/ogg",
+    "aac": "audio/aac"
+}
 
 
 # Load ASR model
@@ -96,25 +111,39 @@ st.write(
     "your speech into written Balochi text."
 )
 
-st.info("Supported audio format: WAV")
+st.info(
+    "Supported formats: WAV, MP3, M4A, FLAC, OGG and AAC"
+)
 
 uploaded_file = st.file_uploader(
     "Choose a Balochi audio file",
-    type=["wav"]
+    type=SUPPORTED_FORMATS
 )
 
 
 # Audio transcription
 if uploaded_file is not None:
 
-    st.audio(uploaded_file, format="audio/wav")
+    file_extension = uploaded_file.name.rsplit(
+        ".", 1
+    )[-1].lower()
+
+    audio_format = AUDIO_MIME_TYPES.get(
+        file_extension,
+        "audio/wav"
+    )
+
+    st.audio(
+        uploaded_file.getvalue(),
+        format=audio_format
+    )
 
     if st.button("Transcribe Audio", type="primary"):
 
         try:
             with st.spinner("Transcribing Balochi audio..."):
 
-                # Release punctuation model memory if already loaded
+                # Release punctuation model memory
                 load_punctuation_model.clear()
                 gc.collect()
 
@@ -123,16 +152,35 @@ if uploaded_file is not None:
 
                 processor, model, device = load_asr_model()
 
-                audio, sample_rate = librosa.load(
-                    io.BytesIO(uploaded_file.getvalue()),
-                    sr=16000,
-                    mono=True
-                )
+                # Save uploaded audio temporarily
+                with tempfile.NamedTemporaryFile(
+                    suffix="." + file_extension,
+                    delete=False
+                ) as temp_audio:
+
+                    temp_audio.write(
+                        uploaded_file.getvalue()
+                    )
+
+                    temp_audio_path = temp_audio.name
+
+                try:
+                    # Load and convert audio to 16kHz mono
+                    audio, sample_rate = librosa.load(
+                        temp_audio_path,
+                        sr=16000,
+                        mono=True
+                    )
+
+                finally:
+                    if os.path.exists(temp_audio_path):
+                        os.remove(temp_audio_path)
 
                 if len(audio) == 0:
                     st.error("The uploaded audio is empty.")
                     st.stop()
 
+                # Prepare audio for ASR model
                 inputs = processor(
                     audio,
                     sampling_rate=16000,
@@ -155,12 +203,18 @@ if uploaded_file is not None:
                 )[0]
 
                 st.session_state["transcription"] = transcription
-                st.session_state.pop("punctuated_text", None)
+
+                st.session_state.pop(
+                    "punctuated_text",
+                    None
+                )
 
             st.success("Transcription completed!")
 
         except Exception as e:
-            st.error(f"Transcription failed: {e}")
+            st.error(
+                f"Transcription failed: {e}"
+            )
 
 
 # Display original transcription
@@ -185,16 +239,20 @@ if "transcription" in st.session_state:
     if st.button("Restore Punctuation"):
 
         try:
-            with st.spinner("Restoring Balochi punctuation..."):
+            with st.spinner(
+                "Restoring Balochi punctuation..."
+            ):
 
-                # Release ASR model memory before loading ByT5
+                # Release ASR model memory
                 load_asr_model.clear()
                 gc.collect()
 
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-                tokenizer, model, device = load_punctuation_model()
+                tokenizer, model, device = (
+                    load_punctuation_model()
+                )
 
                 text = st.session_state["transcription"]
 
@@ -222,12 +280,18 @@ if "transcription" in st.session_state:
                     skip_special_tokens=True
                 )
 
-                st.session_state["punctuated_text"] = punctuated_text
+                st.session_state["punctuated_text"] = (
+                    punctuated_text
+                )
 
-            st.success("Punctuation restoration completed!")
+            st.success(
+                "Punctuation restoration completed!"
+            )
 
         except Exception as e:
-            st.error(f"Punctuation restoration failed: {e}")
+            st.error(
+                f"Punctuation restoration failed: {e}"
+            )
 
 
 # Display punctuation-restored text
