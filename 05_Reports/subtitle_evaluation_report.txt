@@ -1,0 +1,40 @@
+
+BALOCHI ASR - SUBTITLE GENERATION EVALUATION
+=============================================
+
+Project: SR-05
+Module: Word-Level Forced Alignment and Subtitle Generation
+
+1. DATASET
+----------
+Total test samples available: 496
+Samples processed: 5
+Total aligned words: 47
+
+2. OUTPUT FILES
+---------------
+SRT subtitle files generated: 5
+Combined timestamp CSV: subtitle_word_timestamps.csv
+
+3. TIMESTAMP VALIDATION
+----------------------
+Missing values: 0
+Invalid durations: 0
+Negative timestamps: 0
+
+4. VALIDATION LIMITATIONS
+-------------------------
+Five samples were processed as an initial prototype.
+Timestamp boundary checks passed after correction.
+Word-level acoustic accuracy has not been independently measured.
+Subtitle text and timing require further evaluation on more samples.
+Reference transcripts were used for forced alignment.
+
+5. CONCLUSION
+-------------
+A working Balochi word-level forced alignment and SRT
+generation prototype was implemented and tested on five
+audio samples. All generated timestamps passed the final
+boundary validation.
+
+Generated on: 2026-11-21

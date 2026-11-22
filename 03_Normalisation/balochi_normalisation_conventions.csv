@@ -1,0 +1,13 @@
+﻿category,written_form,spoken_form,normalized_form,language_style,verified
+cardinal,Eastern Arabic digits (۰۱۲۳۴۵۶۷۸۹),Digit sequences,Western digits (0123456789),Script-level digit standardization; not linguistically verified,Code-tested
+ordinal,,,,,No
+fraction,,,,,No
+date,,,,,No
+islamic_date,,,,,No
+time,,,,,No
+currency,,,,,No
+temperature,,,,,No
+unit,,,,,No
+phone_number,,,,,No
+abbreviation,,,,,No
+acronym,,,,,No

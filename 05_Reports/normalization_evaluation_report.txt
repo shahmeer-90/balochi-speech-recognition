@@ -1,0 +1,32 @@
+
+BALOCHI TEXT NORMALIZATION - EVALUATION REPORT
+
+1. Dataset Information
+Original records: 5033
+Unique records: 4478
+Duplicate rows removed: 555
+
+2. Normalization Operations
+- Eastern Arabic digit conversion to Western digits
+- Date spacing normalization
+- Preservation of Balochi number words
+
+3. Evaluation Results
+Unique records: 4478
+Changed sentences: 11
+Unchanged sentences: 4467
+Duplicate original sentences: 0
+Missing values: 0
+
+4. Validation
+- Digit conversion tested
+- Date spacing tested
+- Full dataset processed
+- Duplicate-free dataset saved
+
+5. Limitations
+- Linguistic verification by native Balochi experts is pending.
+- Number-word normalization is not fully implemented.
+- Results represent rule-based formatting, not semantic accuracy.
+
+Status: Normalization prototype implemented and tested.

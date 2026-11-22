@@ -1,0 +1,126 @@
+
+=============================================
+       SR-05 FINAL PROJECT EVALUATION
+=============================================
+
+PROJECT:
+Recognition Post-Processing:
+Punctuation, Normalisation and Subtitles
+
+---------------------------------------------
+1. PUNCTUATION RESTORATION
+---------------------------------------------
+
+Model: xlm-roberta-base
+Task: Token Classification
+Training Dataset: 4009 samples
+Validation Dataset: 502 samples
+Testing Dataset: 522 samples
+Training Epochs: 3
+
+TEST RESULTS:
+Precision: 0.304245
+Recall:    0.365943
+F1 Score:  0.331843
+Accuracy:  0.953158
+
+Note:
+Accuracy is high partly because most tokens do not
+require punctuation. Punctuation F1 is a more useful
+measure of punctuation prediction performance.
+
+---------------------------------------------
+2. INVERSE TEXT NORMALISATION
+---------------------------------------------
+
+Numeric expression detection:
+- Date: Working
+- Currency: Working
+- Time: Working
+- Temperature: Working
+- Units: Working
+- Fractions: Working
+
+Number-word dictionary: Created
+Verified Balochi number mappings: 0
+
+Status:
+Inverse normalisation framework implemented.
+Numeric expression detection is working.
+Actual Balochi spoken number conversion is pending
+verified native-speaker mappings.
+
+---------------------------------------------
+3. SUBTITLE SEGMENTATION
+---------------------------------------------
+
+Maximum characters per line: 42
+Maximum lines per subtitle block: 2
+
+SRT generation: Successful
+VTT generation: Successful
+
+READABILITY TEST:
+
+SRT:
+Total blocks: 2
+Valid blocks: 2
+Pass rate: 100% (2 sample subtitle blocks)
+
+VTT:
+Total blocks: 2
+Valid blocks: 2
+Pass rate: 100% (2 sample subtitle blocks)
+
+Timestamp-compatible interface: Tested
+
+Note:
+Current timestamps are estimated or simulated.
+Actual audio-aligned timestamps require SR-03
+recognizer timestamps.
+
+---------------------------------------------
+4. PIPELINE INTEGRATION
+---------------------------------------------
+
+Punctuation model loading: Successful
+Punctuation restoration: Successful
+Inverse normalisation framework: Tested (partial)
+Subtitle generation: Successful
+
+Manual transcript pipeline: Tested
+Actual SR-03 recognizer connection: Pending
+
+---------------------------------------------
+5. PROJECT LIMITATIONS
+---------------------------------------------
+
+1. Actual SR-03 audio recognizer is not connected.
+2. Actual audio-aligned subtitle timestamps are pending.
+3. Verified Balochi number-word mappings are not
+   yet available.
+4. Punctuation model evaluation is based on the
+   available dataset and should not be generalized
+   to all Balochi dialects.
+5. Further native-speaker validation is recommended.
+
+---------------------------------------------
+6. CONCLUSION
+---------------------------------------------
+
+An SR-05 post-processing prototype has been
+implemented with punctuation restoration,
+numeric expression detection, inverse
+normalisation framework, subtitle segmentation,
+and SRT/VTT generation.
+
+The components have been tested independently
+and through a manually supplied transcript
+pipeline.
+
+Actual SR-03 recognizer integration and
+additional linguistic validation remain future work.
+
+=============================================
+END OF REPORT
+=============================================
