@@ -6,6 +6,10 @@ import tempfile
 import gc
 import os
 
+import transformers
+import tokenizers
+import sentencepiece
+
 from transformers import (
     Wav2Vec2ForCTC,
     Wav2Vec2CTCTokenizer,
@@ -53,7 +57,36 @@ DEVICE = torch.device(
 
 
 # ==========================================
-# 2. HUGGING FACE AUTHENTICATION
+# 2. ENVIRONMENT DIAGNOSTICS
+# ==========================================
+
+with st.expander("System and Model Environment"):
+
+    st.write("Device:", str(DEVICE))
+
+    st.write(
+        "Transformers:",
+        transformers.__version__
+    )
+
+    st.write(
+        "PyTorch:",
+        torch.__version__
+    )
+
+    st.write(
+        "Tokenizers:",
+        tokenizers.__version__
+    )
+
+    st.write(
+        "SentencePiece:",
+        sentencepiece.__version__
+    )
+
+
+# ==========================================
+# 3. HUGGING FACE AUTHENTICATION
 # ==========================================
 
 def get_hf_token():
@@ -69,7 +102,7 @@ def get_hf_token():
 
 
 # ==========================================
-# 3. MEMORY MANAGEMENT
+# 4. MEMORY MANAGEMENT
 # ==========================================
 
 def release_memory():
@@ -81,7 +114,7 @@ def release_memory():
 
 
 # ==========================================
-# 4. LOAD ASR MODEL
+# 5. LOAD ASR MODEL
 # ==========================================
 
 def load_asr_model(token):
@@ -115,7 +148,7 @@ def load_asr_model(token):
 
 
 # ==========================================
-# 5. LOAD BYT5 MODEL
+# 6. LOAD BYT5 MODEL
 # ==========================================
 
 def load_punctuation_model(token):
@@ -137,7 +170,7 @@ def load_punctuation_model(token):
 
 
 # ==========================================
-# 6. AUDIO PROCESSING
+# 7. AUDIO PROCESSING
 # ==========================================
 
 def process_audio(audio_bytes, extension):
@@ -179,7 +212,7 @@ def process_audio(audio_bytes, extension):
 
 
 # ==========================================
-# 7. TRANSCRIBE AUDIO
+# 8. TRANSCRIBE AUDIO
 # ==========================================
 
 def transcribe_audio(audio_bytes, extension):
@@ -242,14 +275,17 @@ def transcribe_audio(audio_bytes, extension):
 
     finally:
 
-        del model
-        del processor
+        if model is not None:
+            del model
+
+        if processor is not None:
+            del processor
 
         release_memory()
 
 
 # ==========================================
-# 8. RESTORE PUNCTUATION
+# 9. RESTORE PUNCTUATION
 # ==========================================
 
 def restore_punctuation(text):
@@ -285,8 +321,10 @@ def restore_punctuation(text):
                 text.strip(),
                 return_tensors="pt",
                 truncation=True,
-                max_length=256
+                max_length=512
             )
+
+            input_length = inputs["input_ids"].shape[1]
 
             inputs = {
                 key: value.to(DEVICE)
@@ -295,17 +333,34 @@ def restore_punctuation(text):
 
             with torch.inference_mode():
 
-               output_ids = model.generate(
+                output_ids = model.generate(
                     **inputs,
                     max_new_tokens=512,
                     num_beams=1,
                     do_sample=False
-            )
+                )
 
             punctuated_text = tokenizer.decode(
                 output_ids[0],
                 skip_special_tokens=True
             ).strip()
+
+            output_length = output_ids.shape[1]
+
+            st.write(
+                "ByT5 input token length:",
+                input_length
+            )
+
+            st.write(
+                "ByT5 output token length:",
+                output_length
+            )
+
+            st.write(
+                "ByT5 output:",
+                punctuated_text
+            )
 
             if not punctuated_text:
 
@@ -327,14 +382,17 @@ def restore_punctuation(text):
 
     finally:
 
-        del model
-        del tokenizer
+        if model is not None:
+            del model
+
+        if tokenizer is not None:
+            del tokenizer
 
         release_memory()
 
 
 # ==========================================
-# 9. APPLICATION INTERFACE
+# 10. APPLICATION INTERFACE
 # ==========================================
 
 st.title("🎙️ Balochi Speech Recognition")
@@ -354,7 +412,7 @@ st.caption(
 
 
 # ==========================================
-# 10. AUDIO UPLOAD
+# 11. AUDIO UPLOAD
 # ==========================================
 
 uploaded_file = st.file_uploader(
@@ -426,7 +484,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 11. DISPLAY ORIGINAL TRANSCRIPTION
+# 12. DISPLAY ORIGINAL TRANSCRIPTION
 # ==========================================
 
 if (
@@ -456,7 +514,7 @@ if (
     )
 
     # ======================================
-    # 12. PUNCTUATION RESTORATION BUTTON
+    # 13. PUNCTUATION RESTORATION BUTTON
     # ======================================
 
     if st.button(
@@ -496,7 +554,7 @@ if (
 
 
 # ==========================================
-# 13. DISPLAY PUNCTUATED TEXT
+# 14. DISPLAY PUNCTUATED TEXT
 # ==========================================
 
 if (
@@ -527,7 +585,7 @@ if (
 
 
 # ==========================================
-# 14. FOOTER
+# 15. FOOTER
 # ==========================================
 
 st.divider()
