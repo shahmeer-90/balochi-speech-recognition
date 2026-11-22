@@ -9,6 +9,7 @@ import os
 import transformers
 import tokenizers
 import sentencepiece
+import huggingface_hub
 
 from transformers import (
     Wav2Vec2ForCTC,
@@ -17,12 +18,6 @@ from transformers import (
     Wav2Vec2Processor,
     AutoTokenizer,
     AutoModelForSeq2SeqLM
-)
-import huggingface_hub
-
-st.write(
-    "Hugging Face Hub:",
-    huggingface_hub.__version__
 )
 
 
@@ -35,6 +30,11 @@ st.set_page_config(
     page_icon="🎙️",
     layout="centered"
 )
+
+
+# ==========================================
+# 2. MODEL CONFIGURATION
+# ==========================================
 
 ASR_MODEL_ID = "shahMeer2002/balochi-xlsr-asr"
 
@@ -63,7 +63,7 @@ DEVICE = torch.device(
 
 
 # ==========================================
-# 2. ENVIRONMENT DIAGNOSTICS
+# 3. ENVIRONMENT DIAGNOSTICS
 # ==========================================
 
 with st.expander("System and Model Environment"):
@@ -90,9 +90,14 @@ with st.expander("System and Model Environment"):
         sentencepiece.__version__
     )
 
+    st.write(
+        "Hugging Face Hub:",
+        huggingface_hub.__version__
+    )
+
 
 # ==========================================
-# 3. HUGGING FACE AUTHENTICATION
+# 4. HUGGING FACE AUTHENTICATION
 # ==========================================
 
 def get_hf_token():
@@ -108,7 +113,7 @@ def get_hf_token():
 
 
 # ==========================================
-# 4. MEMORY MANAGEMENT
+# 5. MEMORY MANAGEMENT
 # ==========================================
 
 def release_memory():
@@ -120,7 +125,7 @@ def release_memory():
 
 
 # ==========================================
-# 5. LOAD ASR MODEL
+# 6. LOAD ASR MODEL
 # ==========================================
 
 def load_asr_model(token):
@@ -154,7 +159,7 @@ def load_asr_model(token):
 
 
 # ==========================================
-# 6. LOAD BYT5 MODEL
+# 7. LOAD BYT5 MODEL
 # ==========================================
 
 def load_punctuation_model(token):
@@ -176,7 +181,7 @@ def load_punctuation_model(token):
 
 
 # ==========================================
-# 7. AUDIO PROCESSING
+# 8. AUDIO PROCESSING
 # ==========================================
 
 def process_audio(audio_bytes, extension):
@@ -218,7 +223,7 @@ def process_audio(audio_bytes, extension):
 
 
 # ==========================================
-# 8. TRANSCRIBE AUDIO
+# 9. TRANSCRIBE AUDIO
 # ==========================================
 
 def transcribe_audio(audio_bytes, extension):
@@ -291,7 +296,7 @@ def transcribe_audio(audio_bytes, extension):
 
 
 # ==========================================
-# 9. RESTORE PUNCTUATION
+# 10. RESTORE PUNCTUATION
 # ==========================================
 
 def restore_punctuation(text):
@@ -398,7 +403,7 @@ def restore_punctuation(text):
 
 
 # ==========================================
-# 10. APPLICATION INTERFACE
+# 11. APPLICATION INTERFACE
 # ==========================================
 
 st.title("🎙️ Balochi Speech Recognition")
@@ -418,7 +423,7 @@ st.caption(
 
 
 # ==========================================
-# 11. AUDIO UPLOAD
+# 12. AUDIO UPLOAD
 # ==========================================
 
 uploaded_file = st.file_uploader(
@@ -490,7 +495,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 12. DISPLAY ORIGINAL TRANSCRIPTION
+# 13. DISPLAY ORIGINAL TRANSCRIPTION
 # ==========================================
 
 if (
@@ -520,7 +525,7 @@ if (
     )
 
     # ======================================
-    # 13. PUNCTUATION RESTORATION BUTTON
+    # 14. PUNCTUATION RESTORATION BUTTON
     # ======================================
 
     if st.button(
@@ -560,7 +565,7 @@ if (
 
 
 # ==========================================
-# 14. DISPLAY PUNCTUATED TEXT
+# 15. DISPLAY PUNCTUATED TEXT
 # ==========================================
 
 if (
@@ -591,7 +596,7 @@ if (
 
 
 # ==========================================
-# 15. FOOTER
+# 16. FOOTER
 # ==========================================
 
 st.divider()
