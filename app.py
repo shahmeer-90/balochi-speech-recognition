@@ -5,6 +5,7 @@ import librosa
 import tempfile
 import gc
 import os
+import re
 
 import transformers
 import tokenizers
@@ -37,10 +38,7 @@ st.set_page_config(
 # ==========================================
 
 ASR_MODEL_ID = "shahMeer2002/balochi-xlsr-asr"
-
-PUNCTUATION_MODEL_ID = (
-    "shahMeer2002/balochi-byt5-punctuation"
-)
+PUNCTUATION_MODEL_ID = "shahMeer2002/balochi-byt5-punctuation"
 
 SUPPORTED_FORMATS = [
     "wav", "mp3", "m4a", "flac", "ogg", "aac"
@@ -55,6 +53,8 @@ AUDIO_MIME_TYPES = {
     "aac": "audio/aac"
 }
 
+CHUNK_SIZE = 50
+
 torch.set_num_threads(2)
 
 DEVICE = torch.device(
@@ -63,37 +63,17 @@ DEVICE = torch.device(
 
 
 # ==========================================
-# 3. ENVIRONMENT DIAGNOSTICS
+# 3. ENVIRONMENT INFORMATION
 # ==========================================
 
 with st.expander("System and Model Environment"):
 
     st.write("Device:", str(DEVICE))
-
-    st.write(
-        "Transformers:",
-        transformers.__version__
-    )
-
-    st.write(
-        "PyTorch:",
-        torch.__version__
-    )
-
-    st.write(
-        "Tokenizers:",
-        tokenizers.__version__
-    )
-
-    st.write(
-        "SentencePiece:",
-        sentencepiece.__version__
-    )
-
-    st.write(
-        "Hugging Face Hub:",
-        huggingface_hub.__version__
-    )
+    st.write("Transformers:", transformers.__version__)
+    st.write("PyTorch:", torch.__version__)
+    st.write("Tokenizers:", tokenizers.__version__)
+    st.write("SentencePiece:", sentencepiece.__version__)
+    st.write("Hugging Face Hub:", huggingface_hub.__version__)
 
 
 # ==========================================
@@ -106,9 +86,7 @@ def get_hf_token():
         return st.secrets["HF_TOKEN"]
 
     except Exception:
-        st.error(
-            "HF_TOKEN is missing from Streamlit Secrets."
-        )
+        st.error("HF_TOKEN is missing from Streamlit Secrets.")
         st.stop()
 
 
@@ -135,11 +113,9 @@ def load_asr_model(token):
         token=token
     )
 
-    feature_extractor = (
-        Wav2Vec2FeatureExtractor.from_pretrained(
-            ASR_MODEL_ID,
-            token=token
-        )
+    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(
+        ASR_MODEL_ID,
+        token=token
     )
 
     processor = Wav2Vec2Processor(
@@ -205,20 +181,13 @@ def process_audio(audio_bytes, extension):
         )
 
         if audio is None or len(audio) == 0:
-
-            raise ValueError(
-                "Audio file is empty."
-            )
+            raise ValueError("Audio file is empty.")
 
         return audio
 
     finally:
 
-        if (
-            temp_audio_path
-            and os.path.exists(temp_audio_path)
-        ):
-
+        if temp_audio_path and os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
 
 
@@ -237,20 +206,13 @@ def transcribe_audio(audio_bytes, extension):
 
     try:
 
-        with st.spinner(
-            "Loading Balochi ASR model..."
-        ):
+        with st.spinner("Loading Balochi ASR model..."):
 
             processor, model = load_asr_model(token)
 
-        with st.spinner(
-            "Processing audio and recognizing speech..."
-        ):
+        with st.spinner("Recognizing Balochi speech..."):
 
-            audio = process_audio(
-                audio_bytes,
-                extension
-            )
+            audio = process_audio(audio_bytes, extension)
 
             inputs = processor(
                 audio,
@@ -262,25 +224,16 @@ def transcribe_audio(audio_bytes, extension):
             input_values = inputs.input_values.to(DEVICE)
 
             with torch.inference_mode():
+                logits = model(input_values).logits
 
-                logits = model(
-                    input_values
-                ).logits
-
-            predicted_ids = torch.argmax(
-                logits,
-                dim=-1
-            )
+            predicted_ids = torch.argmax(logits, dim=-1)
 
             transcription = processor.batch_decode(
                 predicted_ids
             )[0].strip()
 
             if not transcription:
-
-                raise ValueError(
-                    "ASR returned empty transcription."
-                )
+                raise ValueError("ASR returned empty transcription.")
 
             return transcription
 
@@ -296,16 +249,88 @@ def transcribe_audio(audio_bytes, extension):
 
 
 # ==========================================
-# 10. RESTORE PUNCTUATION
+# 10. SPLIT LONG TEXT INTO CHUNKS
+# ==========================================
+
+def split_text_into_chunks(text, max_chars=CHUNK_SIZE):
+
+    words = text.split()
+
+    chunks = []
+    current_chunk = ""
+
+    for word in words:
+
+        if len(word) > max_chars:
+
+            if current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = ""
+
+            chunks.append(word)
+            continue
+
+        candidate = (
+            current_chunk + " " + word
+            if current_chunk
+            else word
+        )
+
+        if len(candidate) <= max_chars:
+
+            current_chunk = candidate
+
+        else:
+
+            if current_chunk:
+                chunks.append(current_chunk)
+
+            current_chunk = word
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return chunks
+
+
+# ==========================================
+# 11. VALIDATE MODEL OUTPUT
+# ==========================================
+
+def validate_punctuation_output(original, generated):
+
+    if not generated or not generated.strip():
+        return False
+
+    original_words = re.findall(
+        r"\w+",
+        original,
+        flags=re.UNICODE
+    )
+
+    generated_words = re.findall(
+        r"\w+",
+        generated,
+        flags=re.UNICODE
+    )
+
+    # Punctuation restoration should preserve
+    # the original words and their order.
+
+    if original_words != generated_words:
+        return False
+
+    return True
+
+
+# ==========================================
+# 12. RESTORE PUNCTUATION
 # ==========================================
 
 def restore_punctuation(text):
 
     if not text or not text.strip():
-
-        raise ValueError(
-            "No transcription text available."
-        )
+        raise ValueError("No transcription text available.")
 
     token = get_hf_token()
 
@@ -316,26 +341,31 @@ def restore_punctuation(text):
 
     try:
 
-        with st.spinner(
-            "Loading ByT5 punctuation model..."
-        ):
+        with st.spinner("Loading ByT5 punctuation model..."):
 
-            tokenizer, model = load_punctuation_model(
-                token
+            tokenizer, model = load_punctuation_model(token)
+
+        chunks = split_text_into_chunks(text.strip())
+
+        processed_chunks = []
+        fallback_count = 0
+
+        progress = st.progress(0)
+
+        status = st.empty()
+
+        for index, chunk in enumerate(chunks):
+
+            status.write(
+                f"Processing chunk {index + 1} of {len(chunks)}..."
             )
-
-        with st.spinner(
-            "Restoring Balochi punctuation..."
-        ):
 
             inputs = tokenizer(
-                text.strip(),
+                chunk,
                 return_tensors="pt",
                 truncation=True,
-                max_length=512
+                max_length=128
             )
-
-            input_length = inputs["input_ids"].shape[1]
 
             inputs = {
                 key: value.to(DEVICE)
@@ -346,50 +376,52 @@ def restore_punctuation(text):
 
                 output_ids = model.generate(
                     **inputs,
-                    max_new_tokens=512,
+                    max_new_tokens=128,
                     num_beams=1,
                     do_sample=False
                 )
 
-            punctuated_text = tokenizer.decode(
+            generated = tokenizer.decode(
                 output_ids[0],
                 skip_special_tokens=True
             ).strip()
 
-            output_length = output_ids.shape[1]
+            # Reject empty, corrupted or word-changing output.
 
-            st.write(
-                "ByT5 input token length:",
-                input_length
+            if validate_punctuation_output(chunk, generated):
+
+                processed_chunks.append(generated)
+
+            else:
+
+                processed_chunks.append(chunk)
+                fallback_count += 1
+
+            progress.progress(
+                (index + 1) / len(chunks)
             )
 
-            st.write(
-                "ByT5 output token length:",
-                output_length
+        status.empty()
+        progress.empty()
+
+        final_text = " ".join(processed_chunks)
+
+        if not final_text.strip():
+            raise ValueError("No valid punctuation output produced.")
+
+        if fallback_count:
+
+            st.warning(
+                f"{fallback_count} chunk(s) returned invalid output. "
+                "Original text was preserved for those chunks."
             )
 
-            st.write(
-                "ByT5 output:",
-                punctuated_text
-            )
+        st.info(
+            f"Total chunks: {len(chunks)} | "
+            f"Preserved original chunks: {fallback_count}"
+        )
 
-            if not punctuated_text:
-
-                raise ValueError(
-                    "ByT5 returned empty output."
-                )
-
-            if not any(
-                character.isalnum()
-                or '\u0600' <= character <= '\u06FF'
-                for character in punctuated_text
-            ):
-
-                raise ValueError(
-                    "ByT5 generated invalid output."
-                )
-
-            return punctuated_text
+        return final_text
 
     finally:
 
@@ -403,7 +435,7 @@ def restore_punctuation(text):
 
 
 # ==========================================
-# 11. APPLICATION INTERFACE
+# 13. APPLICATION INTERFACE
 # ==========================================
 
 st.title("🎙️ Balochi Speech Recognition")
@@ -418,12 +450,13 @@ st.info(
 )
 
 st.caption(
-    "Audio is processed using the XLS-R Balochi ASR model."
+    "Audio recognition: XLS-R | "
+    "Punctuation restoration: ByT5"
 )
 
 
 # ==========================================
-# 12. AUDIO UPLOAD
+# 14. AUDIO UPLOAD
 # ==========================================
 
 uploaded_file = st.file_uploader(
@@ -462,15 +495,8 @@ if uploaded_file is not None:
         use_container_width=True
     ):
 
-        st.session_state.pop(
-            "transcription",
-            None
-        )
-
-        st.session_state.pop(
-            "punctuated_text",
-            None
-        )
+        st.session_state.pop("transcription", None)
+        st.session_state.pop("punctuated_text", None)
 
         try:
 
@@ -479,23 +505,17 @@ if uploaded_file is not None:
                 extension
             )
 
-            st.session_state["transcription"] = (
-                transcription
-            )
+            st.session_state["transcription"] = transcription
 
-            st.success(
-                "Transcription completed successfully!"
-            )
+            st.success("Transcription completed successfully!")
 
         except Exception as e:
 
-            st.error(
-                f"Transcription failed: {str(e)}"
-            )
+            st.error(f"Transcription failed: {str(e)}")
 
 
 # ==========================================
-# 13. DISPLAY ORIGINAL TRANSCRIPTION
+# 15. DISPLAY ORIGINAL TRANSCRIPTION
 # ==========================================
 
 if (
@@ -505,9 +525,7 @@ if (
 
     st.divider()
 
-    st.subheader(
-        "📝 Balochi Transcription"
-    )
+    st.subheader("📝 Balochi Transcription")
 
     st.text_area(
         "Original Recognized Text",
@@ -524,38 +542,23 @@ if (
         use_container_width=True
     )
 
-    # ======================================
-    # 14. PUNCTUATION RESTORATION BUTTON
-    # ======================================
-
     if st.button(
         "Restore Punctuation",
         type="primary",
         use_container_width=True
     ):
 
-        st.session_state.pop(
-            "punctuated_text",
-            None
-        )
+        st.session_state.pop("punctuated_text", None)
 
         try:
 
-            original_text = (
-                st.session_state["transcription"]
-            )
+            original_text = st.session_state["transcription"]
 
-            punctuated_text = restore_punctuation(
-                original_text
-            )
+            punctuated_text = restore_punctuation(original_text)
 
-            st.session_state["punctuated_text"] = (
-                punctuated_text
-            )
+            st.session_state["punctuated_text"] = punctuated_text
 
-            st.success(
-                "Punctuation restoration completed!"
-            )
+            st.success("Punctuation processing completed!")
 
         except Exception as e:
 
@@ -565,7 +568,7 @@ if (
 
 
 # ==========================================
-# 15. DISPLAY PUNCTUATED TEXT
+# 16. DISPLAY PROCESSED TEXT
 # ==========================================
 
 if (
@@ -575,9 +578,7 @@ if (
 
     st.divider()
 
-    st.subheader(
-        "✨ Punctuation Restored Text"
-    )
+    st.subheader("✨ Punctuation Restored Text")
 
     st.text_area(
         "Processed Balochi Text",
@@ -596,12 +597,12 @@ if (
 
 
 # ==========================================
-# 16. FOOTER
+# 17. FOOTER
 # ==========================================
 
 st.divider()
 
 st.caption(
-    "Balochi Speech Recognition | "
-    "XLS-R ASR + ByT5 Punctuation Restoration"
+    "SR-05 | Balochi Speech Recognition "
+    "Post-Processing Prototype"
 )
