@@ -142,7 +142,8 @@ def load_punctuation_model(token):
 
     tokenizer = AutoTokenizer.from_pretrained(
         PUNCTUATION_MODEL_ID,
-        token=token
+        token=token,
+        use_fast=False
     )
 
     model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -314,17 +315,174 @@ def validate_punctuation_output(original, generated):
         flags=re.UNICODE
     )
 
-    # Check whether the original words
-    # are preserved in the generated output.
-
-    if original_words != generated_words:
-        return False
-
-    return True
+    return original_words == generated_words
 
 
 # ==========================================
-# 12. RESTORE PUNCTUATION WITH DEBUGGING
+# 12. BYT5 MODEL DIAGNOSTIC
+# ==========================================
+
+def diagnose_punctuation_model(text):
+
+    if not text or not text.strip():
+        raise ValueError("No transcription available.")
+
+    token = get_hf_token()
+
+    tokenizer = None
+    model = None
+
+    try:
+
+        with st.spinner("Running ByT5 diagnostic test..."):
+
+            tokenizer, model = load_punctuation_model(token)
+
+            chunks = split_text_into_chunks(text.strip())
+
+            if not chunks:
+                raise ValueError("No text chunks found.")
+
+            sample = chunks[0]
+
+            inputs = tokenizer(
+                sample,
+                return_tensors="pt"
+            )
+
+            inputs = {
+                key: value.to(DEVICE)
+                for key, value in inputs.items()
+            }
+
+            with torch.inference_mode():
+
+                output_ids = model.generate(
+                    **inputs,
+                    max_new_tokens=64,
+                    num_beams=1,
+                    do_sample=False
+                )
+
+            generated = tokenizer.decode(
+                output_ids[0],
+                skip_special_tokens=True
+            ).strip()
+
+        # ==================================
+        # DISPLAY DIAGNOSTIC INFORMATION
+        # ==================================
+
+        st.divider()
+
+        st.subheader("🔬 ByT5 Model Configuration")
+
+        st.write(
+            "Tokenizer class:",
+            tokenizer.__class__.__name__
+        )
+
+        st.write(
+            "Model class:",
+            model.__class__.__name__
+        )
+
+        st.write(
+            "EOS token ID:",
+            tokenizer.eos_token_id
+        )
+
+        st.write(
+            "PAD token ID:",
+            tokenizer.pad_token_id
+        )
+
+        st.write(
+            "Decoder start ID:",
+            model.config.decoder_start_token_id
+        )
+
+        st.write(
+            "Model vocabulary size:",
+            model.config.vocab_size
+        )
+
+        st.write(
+            "Tokenizer vocabulary size:",
+            len(tokenizer)
+        )
+
+        st.write(
+            "Model architecture:",
+            model.config.model_type
+        )
+
+        st.write(
+            "Encoder layers:",
+            getattr(model.config, "num_layers", "Not available")
+        )
+
+        st.write(
+            "Decoder layers:",
+            getattr(model.config, "num_decoder_layers", "Not available")
+        )
+
+        # ==================================
+        # INPUT TOKEN IDs
+        # ==================================
+
+        st.subheader("Input Token IDs")
+
+        st.code(
+            str(inputs["input_ids"][0].tolist())
+        )
+
+        # ==================================
+        # OUTPUT TOKEN IDs
+        # ==================================
+
+        st.subheader("Generated Token IDs")
+
+        st.code(
+            str(output_ids[0].tolist())
+        )
+
+        # ==================================
+        # TEXT COMPARISON
+        # ==================================
+
+        st.subheader("Model Output Comparison")
+
+        st.write("Original Input:")
+
+        st.code(sample, language=None)
+
+        st.write("Decoded Output:")
+
+        st.code(
+            generated if generated else "[EMPTY OUTPUT]",
+            language=None
+        )
+
+        st.info(
+            "Diagnostic test completed. "
+            "The output is displayed for investigation; "
+            "it is not an accuracy evaluation."
+        )
+
+    finally:
+
+        if model is not None:
+            del model
+
+        if tokenizer is not None:
+            del tokenizer
+
+        release_memory()
+
+
+# ==========================================
+# 13. RESTORE PUNCTUATION WITH DEBUGGING
 # ==========================================
 
 def restore_punctuation(text):
@@ -393,16 +551,11 @@ def restore_punctuation(text):
             )
 
             if is_valid:
-
                 processed_chunks.append(generated)
 
             else:
-
                 processed_chunks.append(chunk)
                 fallback_count += 1
-
-            # Keep raw output of first five chunks
-            # for debugging and comparison.
 
             if index < 5:
 
@@ -432,11 +585,6 @@ def restore_punctuation(text):
 
         st.subheader("🔍 ByT5 Model Debug Results")
 
-        st.caption(
-            "These results show the actual output "
-            "generated by the punctuation model."
-        )
-
         for i, sample in enumerate(debug_samples):
 
             with st.expander(f"Chunk {i + 1}"):
@@ -456,11 +604,8 @@ def restore_punctuation(text):
                 )
 
                 if sample["valid"]:
-
                     st.success("Validation: Passed")
-
                 else:
-
                     st.error("Validation: Failed")
 
         # ==================================
@@ -507,7 +652,7 @@ def restore_punctuation(text):
 
 
 # ==========================================
-# 13. APPLICATION INTERFACE
+# 14. APPLICATION INTERFACE
 # ==========================================
 
 st.title("🎙️ Balochi Speech Recognition")
@@ -528,7 +673,7 @@ st.caption(
 
 
 # ==========================================
-# 14. AUDIO UPLOAD
+# 15. AUDIO UPLOAD
 # ==========================================
 
 uploaded_file = st.file_uploader(
@@ -587,7 +732,7 @@ if uploaded_file is not None:
 
 
 # ==========================================
-# 15. DISPLAY ORIGINAL TRANSCRIPTION
+# 16. DISPLAY ORIGINAL TRANSCRIPTION
 # ==========================================
 
 if (
@@ -614,6 +759,31 @@ if (
         use_container_width=True
     )
 
+    # ==================================
+    # DIAGNOSTIC BUTTON
+    # ==================================
+
+    if st.button(
+        "🔬 Run ByT5 Diagnostic",
+        use_container_width=True
+    ):
+
+        try:
+
+            diagnose_punctuation_model(
+                st.session_state["transcription"]
+            )
+
+        except Exception as e:
+
+            st.error(
+                f"Diagnostic failed: {str(e)}"
+            )
+
+    # ==================================
+    # RESTORE PUNCTUATION BUTTON
+    # ==================================
+
     if st.button(
         "Restore Punctuation",
         type="primary",
@@ -624,13 +794,13 @@ if (
 
         try:
 
-            original_text = st.session_state["transcription"]
-
             (
                 punctuated_text,
                 fallback_count,
                 total_chunks
-            ) = restore_punctuation(original_text)
+            ) = restore_punctuation(
+                st.session_state["transcription"]
+            )
 
             st.session_state["punctuated_text"] = punctuated_text
 
@@ -663,7 +833,7 @@ if (
 
 
 # ==========================================
-# 16. DISPLAY PROCESSED TEXT
+# 17. DISPLAY PROCESSED TEXT
 # ==========================================
 
 if (
@@ -692,7 +862,7 @@ if (
 
 
 # ==========================================
-# 17. FOOTER
+# 18. FOOTER
 # ==========================================
 
 st.divider()
