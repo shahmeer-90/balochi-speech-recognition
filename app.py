@@ -295,12 +295,12 @@ def restore_punctuation(text):
 
             with torch.inference_mode():
 
-                output_ids = model.generate(
+               output_ids = model.generate(
                     **inputs,
-                    max_new_tokens=128,
+                    max_new_tokens=512,
                     num_beams=1,
                     do_sample=False
-                )
+            )
 
             punctuated_text = tokenizer.decode(
                 output_ids[0],
