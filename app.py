@@ -364,16 +364,11 @@ def validate_punctuation_output(
 # 12. BYT5 GENERATION FUNCTION
 # ==========================================
 
-def generate_punctuation(
-    text,
-    tokenizer,
-    model
-):
+def generate_punctuation(text, tokenizer, model):
 
     if not text or not text.strip():
         raise ValueError("Input text is empty.")
 
-    # Do not truncate the input.
     inputs = tokenizer(
         text,
         return_tensors="pt"
@@ -385,7 +380,6 @@ def generate_punctuation(
     }
 
     with torch.inference_mode():
-
         output_ids = model.generate(
             **inputs,
             max_new_tokens=MAX_NEW_TOKENS,
@@ -397,6 +391,22 @@ def generate_punctuation(
         output_ids[0],
         skip_special_tokens=True
     ).strip()
+
+    # Diagnostic information
+    st.write("Tokenizer EOS ID:", tokenizer.eos_token_id)
+    st.write("Tokenizer PAD ID:", tokenizer.pad_token_id)
+    st.write("Model vocabulary:", model.config.vocab_size)
+
+    st.write("Output token IDs:")
+    st.code(str(output_ids[0].tolist()[:60]))
+
+    st.write("Raw decoded output (special tokens included):")
+    st.code(
+        tokenizer.decode(
+            output_ids[0],
+            skip_special_tokens=False
+        )
+    )
 
     return generated, inputs, output_ids
 
