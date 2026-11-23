@@ -1,6 +1,7 @@
+
 streamlit==1.39.0
 torch==2.4.1
-transformers==5.22.1
+transformers==4.44.2
 librosa==0.10.2.post1
 numpy==1.26.4
 sentencepiece==0.2.3
