@@ -53,10 +53,8 @@ AUDIO_MIME_TYPES = {
     "aac": "audio/aac"
 }
 
-# Keep chunks short for the ByT5 model.
-CHUNK_SIZE = 50
-
-# Same generation limit tested successfully in Colab.
+MAX_WORDS_PER_CHUNK = 35
+MAX_INPUT_LENGTH = 128
 MAX_NEW_TOKENS = 128
 
 torch.set_num_threads(2)
@@ -65,8 +63,6 @@ DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
-
-# Exact training example previously tested successfully in Colab.
 BYT5_TEST_SENTENCE = (
     "آس اِتگ بام ءَھر چار کُنڈاں چو گْوش ئے "
     "زاناں بُنگراں اِنت شپ"
@@ -86,11 +82,6 @@ with st.expander("System and Model Environment"):
     st.write("SentencePiece:", sentencepiece.__version__)
     st.write("Hugging Face Hub:", huggingface_hub.__version__)
 
-    st.caption(
-        "The Colab environment used during testing had "
-        "Transformers 5.22.1. Streamlit may use a different version."
-    )
-
 
 # ==========================================
 # 4. HUGGING FACE AUTHENTICATION
@@ -107,10 +98,12 @@ def get_hf_token():
         return token
 
     except Exception:
+
         st.error(
             "HF_TOKEN is missing from Streamlit Secrets. "
             "Add your Hugging Face read token there."
         )
+
         st.stop()
 
 
@@ -286,49 +279,49 @@ def transcribe_audio(audio_bytes, extension):
 
 
 # ==========================================
-# 10. SPLIT TEXT INTO CHUNKS
+# 10. SENTENCE AND TEXT CHUNKING
 # ==========================================
 
 def split_text_into_chunks(
     text,
-    max_chars=CHUNK_SIZE
+    max_words=MAX_WORDS_PER_CHUNK
 ):
 
-    words = text.split()
+    text = str(text).strip()
+
+    if not text:
+        return []
+
+    # Split using existing punctuation and line breaks.
+    segments = re.split(
+        r'(?<=[.!?؟۔])\s+|\n+',
+        text
+    )
 
     chunks = []
-    current_chunk = ""
 
-    for word in words:
+    for segment in segments:
 
-        if len(word) > max_chars:
+        words = segment.strip().split()
 
-            if current_chunk:
-                chunks.append(current_chunk)
-                current_chunk = ""
-
-            chunks.append(word)
+        if not words:
             continue
 
-        candidate = (
-            current_chunk + " " + word
-            if current_chunk
-            else word
-        )
+        # Keep short sentence-like segments together.
+        if len(words) <= max_words:
 
-        if len(candidate) <= max_chars:
-
-            current_chunk = candidate
+            chunks.append(" ".join(words))
 
         else:
 
-            if current_chunk:
-                chunks.append(current_chunk)
+            # Split long segments without cutting words.
+            for i in range(0, len(words), max_words):
 
-            current_chunk = word
+                chunk = " ".join(
+                    words[i:i + max_words]
+                )
 
-    if current_chunk:
-        chunks.append(current_chunk)
+                chunks.append(chunk)
 
     return chunks
 
@@ -364,14 +357,20 @@ def validate_punctuation_output(
 # 12. BYT5 GENERATION FUNCTION
 # ==========================================
 
-def generate_punctuation(text, tokenizer, model):
+def generate_punctuation(
+    text,
+    tokenizer,
+    model
+):
 
     if not text or not text.strip():
         raise ValueError("Input text is empty.")
 
     inputs = tokenizer(
         text,
-        return_tensors="pt"
+        return_tensors="pt",
+        truncation=True,
+        max_length=MAX_INPUT_LENGTH
     )
 
     inputs = {
@@ -380,6 +379,7 @@ def generate_punctuation(text, tokenizer, model):
     }
 
     with torch.inference_mode():
+
         output_ids = model.generate(
             **inputs,
             max_new_tokens=MAX_NEW_TOKENS,
@@ -391,22 +391,6 @@ def generate_punctuation(text, tokenizer, model):
         output_ids[0],
         skip_special_tokens=True
     ).strip()
-
-    # Diagnostic information
-    st.write("Tokenizer EOS ID:", tokenizer.eos_token_id)
-    st.write("Tokenizer PAD ID:", tokenizer.pad_token_id)
-    st.write("Model vocabulary:", model.config.vocab_size)
-
-    st.write("Output token IDs:")
-    st.code(str(output_ids[0].tolist()[:60]))
-
-    st.write("Raw decoded output (special tokens included):")
-    st.code(
-        tokenizer.decode(
-            output_ids[0],
-            skip_special_tokens=False
-        )
-    )
 
     return generated, inputs, output_ids
 
@@ -469,13 +453,10 @@ def diagnose_punctuation_model():
         )
 
         st.write("Original training example:")
-        st.code(sample, language=None)
+        st.code(sample)
 
         st.write("ByT5 output:")
-        st.code(
-            generated if generated else "[EMPTY OUTPUT]",
-            language=None
-        )
+        st.code(generated if generated else "[EMPTY OUTPUT]")
 
         if validate_punctuation_output(sample, generated):
 
@@ -491,9 +472,8 @@ def diagnose_punctuation_model():
             )
 
         st.info(
-            "Expected Colab test output added a full stop "
-            "at the end of this training example. "
-            "Compare the Streamlit result with that Colab result."
+            "Compare this result with the successful "
+            "Colab diagnostic test."
         )
 
     finally:
@@ -514,6 +494,7 @@ def diagnose_punctuation_model():
 def restore_punctuation(text):
 
     if not text or not text.strip():
+
         raise ValueError(
             "No transcription text available."
         )
@@ -533,9 +514,7 @@ def restore_punctuation(text):
 
             tokenizer, model = load_punctuation_model(token)
 
-        chunks = split_text_into_chunks(
-            text.strip()
-        )
+        chunks = split_text_into_chunks(text)
 
         if not chunks:
             raise ValueError("No text chunks found.")
@@ -556,6 +535,7 @@ def restore_punctuation(text):
             )
 
             generated = ""
+            is_valid = False
 
             try:
 
@@ -572,7 +552,6 @@ def restore_punctuation(text):
 
             except Exception as error:
 
-                is_valid = False
                 generated = f"Generation error: {str(error)}"
 
             if is_valid:
@@ -581,7 +560,7 @@ def restore_punctuation(text):
 
             else:
 
-                # Preserve original text if model output is invalid.
+                # Preserve original text if output is invalid.
                 processed_chunks.append(chunk)
                 fallback_count += 1
 
@@ -614,26 +593,20 @@ def restore_punctuation(text):
 
         for i, sample in enumerate(debug_samples):
 
-            with st.expander(
-                f"Chunk {i + 1}"
-            ):
+            with st.expander(f"Chunk {i + 1}"):
 
                 st.write("Original input:")
-                st.code(
-                    sample["chunk"],
-                    language=None
-                )
+                st.code(sample["chunk"])
 
-                st.write("Raw ByT5 output:")
-                st.code(
-                    sample["generated"],
-                    language=None
-                )
+                st.write("ByT5 output:")
+                st.code(sample["generated"])
 
                 if sample["valid"]:
+
                     st.success("Validation: Passed")
 
                 else:
+
                     st.error("Validation: Failed")
 
         # ==================================
@@ -753,15 +726,8 @@ if uploaded_file is not None:
         use_container_width=True
     ):
 
-        st.session_state.pop(
-            "transcription",
-            None
-        )
-
-        st.session_state.pop(
-            "punctuated_text",
-            None
-        )
+        st.session_state.pop("transcription", None)
+        st.session_state.pop("punctuated_text", None)
 
         try:
 
@@ -840,10 +806,7 @@ if (
         use_container_width=True
     ):
 
-        st.session_state.pop(
-            "punctuated_text",
-            None
-        )
+        st.session_state.pop("punctuated_text", None)
 
         try:
 
@@ -855,9 +818,7 @@ if (
                 st.session_state["transcription"]
             )
 
-            st.session_state["punctuated_text"] = (
-                punctuated_text
-            )
+            st.session_state["punctuated_text"] = punctuated_text
 
             st.session_state[
                 "punctuation_fallback_count"
